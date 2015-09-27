@@ -194,7 +194,7 @@ def digi_formant_f(index):
   return f - (f.max() + f.min()) / 2.0
 
 def midiToFreq(midiNote):
-	return 440.0 * pow(2.0, (midiNote - 69)/12)
+  return 440.0 * pow(2.0, (midiNote - 69)/12)
 
 def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
   if splitsPerOctave is None:
@@ -215,9 +215,38 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
   plt.plot(tables[-2])
   plt.show()
 
-  return freqSplits, tables
+  return (freqSplits, tables)
 
 makeMipMap(saw)
+
+def interpWave(table, phase):
+  """phase is between 0 and 1"""
+  L  = len(table)-1 #The last sample repeats the first one
+  t  = phase*L
+  inext  = int(t) + 1
+  i      = inext -1
+  return table[i] + (table[inext]-table[i]) * (t-i)
+
+def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
+  if sampleRate is None:
+    sampleRate = 44800
+
+  freqSplits, waves = waveTable
+
+  phase = 0.
+  freq = freqFn(samples)
+  for i in samples:
+    f = freq[i]
+    tableIdx  = 0
+    for s in freqSplits:
+      if f >= s:
+        break
+      tableIdx  += 1
+    tableNext = min(tableIdx+1,len(freqSplits)-1)
+
+    phase += f/sampleRate
+    phase %= 1.0
+
 
 import math, wave, array
 duration = 3 # seconds
@@ -230,9 +259,9 @@ dataSize = 2 # 2 bytes because of using signed short integers => bit depth = 16
 numSamplesPerCyc = int(sampleRate / freq)
 numSamples = sampleRate * duration
 for i in range(numSamples):
-    sample = 32767 * float(volume) / 100
-    sample *= math.sin(math.pi * 2 * (i % numSamplesPerCyc) / numSamplesPerCyc)
-    data.append(int(sample))
+  sample = 32767 * float(volume) / 100
+  sample *= math.sin(math.pi * 2 * (i % numSamplesPerCyc) / numSamplesPerCyc)
+  data.append(int(sample))
 f = wave.open('SineWave_' + str(freq) + 'Hz.wav', 'w')
 f.setparams((numChan, dataSize, sampleRate, numSamples, "NONE", "Uncompressed"))
 f.writeframes(data.tostring())
