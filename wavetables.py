@@ -210,6 +210,9 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
   numHarmonics     = [int(targetSampleRate / 2 / f) for f in freqSplits]
   tables           = map(waveFn, numHarmonics)
 
+  #renormalise
+  tables = [t / max(t) for t in tables]
+
   plt.figure()
   plt.plot(tables[0])
   plt.plot(tables[-2])
@@ -217,11 +220,10 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
 
   return (freqSplits, tables)
 
-makeMipMap(saw)
 
 def interpWave(table, phase):
   """phase is between 0 and 1"""
-  L  = len(table)-1 #The last sample repeats the first one
+  L  = table.size-1 #The last sample repeats the first one
   t  = phase*L
   inext  = int(t) + 1
   i      = inext -1
@@ -235,34 +237,57 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
 
   phase = 0.
   freq = freqFn(samples)
+  output = []
   for i in samples:
     f = freq[i]
     tableIdx  = 0
     for s in freqSplits:
-      if f >= s:
+      if f < s:
         break
       tableIdx  += 1
+    tableIdx  = min(tableIdx,len(freqSplits)-1)
     tableNext = min(tableIdx+1,len(freqSplits)-1)
+
+    freq1  = freqSplits[tableIdx]
+    freq2  = freqSplits[tableNext]
 
     phase += f/sampleRate
     phase %= 1.0
+    wave1 = interpWave(waves[tableIdx], phase*f/freq1)
+    wave2 = interpWave(waves[tableNext], phase*f/freq2)
+    output.append(wave1 + (f - freq1)/(freq2-freq1) * (wave2-wave1))
 
+  return numpy.array(output)
+
+
+def freqRamp(samples, freqStart, freqStop):
+  return numpy.exp(numpy.log(freqStart) + samples * numpy.log(freqStop/freqStart) / (samples.size-1))
+
+waveTables = [makeMipMap(saw)]
 
 import math, wave, array
-duration = 3 # seconds
-freq = 440 # of cycles per second (Hz) (frequency of the sine waves)
-volume = 100 # percent
+duration = 10 # seconds
+freqStart = 20
+freqStop  = 12000
+
+sampleRate = 48000
+numSamples = duration * sampleRate
+samples = numpy.arange(numSamples)
+
+tableOsc = waveTableOscillator(samples, waveTables[0], lambda s : freqRamp(s, freqStart, freqStop), sampleRate = sampleRate )
+
+volume = 1 # percent
 data = array.array('h') # signed short integer (-32768 to 32767) data
-sampleRate = 44100 # of samples per second (standard)
 numChan = 1 # of channels (1: mono, 2: stereo)
 dataSize = 2 # 2 bytes because of using signed short integers => bit depth = 16
-numSamplesPerCyc = int(sampleRate / freq)
-numSamples = sampleRate * duration
+
+
 for i in range(numSamples):
-  sample = 32767 * float(volume) / 100
-  sample *= math.sin(math.pi * 2 * (i % numSamplesPerCyc) / numSamplesPerCyc)
+  sample = 32767 * float(volume)
+  sample *= tableOsc[i]
   data.append(int(sample))
-f = wave.open('SineWave_' + str(freq) + 'Hz.wav', 'w')
+
+f = wave.open('Wavetable.wav', 'w')
 f.setparams((numChan, dataSize, sampleRate, numSamples, "NONE", "Uncompressed"))
 f.writeframes(data.tostring())
 f.close()
