@@ -205,18 +205,24 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
   lowestFreq  = 20
   #highestFreq = 7040
 
-  numOctaves       = 9
+  numOctaves       = 10
   freqSplits       = [lowestFreq * 2** (i/float(splitsPerOctave)) for i in xrange(0, splitsPerOctave*numOctaves)]
   numHarmonics     = [int(targetSampleRate / 2 / f) for f in freqSplits]
   tables           = map(waveFn, numHarmonics)
 
   #renormalise
-  tables = [t / max(t) for t in tables]
+  tables = [t / max(abs(t)) for t in tables]
 
+  
   plt.figure()
-  plt.plot(tables[0])
-  plt.plot(tables[-2])
+  plt.plot(tables[-6])
+  plt.plot(tables[-5])
+  plt.plot(tables[-4])
+  #plt.plot(tables[-3])
+  #plt.plot(tables[-2])
+  #plt.plot(tables[-1])
   plt.show()
+  
 
   return (freqSplits, tables)
 
@@ -240,11 +246,8 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
   output = []
   for i in samples:
     f = freq[i]
-    tableIdx  = 0
-    for s in freqSplits:
-      if f < s:
-        break
-      tableIdx  += 1
+
+    tableIdx  = numpy.searchsorted(freqSplits, f) - 1   
     tableIdx  = min(tableIdx,len(freqSplits)-1)
     tableNext = min(tableIdx+1,len(freqSplits)-1)
 
@@ -253,9 +256,12 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
 
     phase += f/sampleRate
     phase %= 1.0
-    wave1 = interpWave(waves[tableIdx], phase*f/freq1)
-    wave2 = interpWave(waves[tableNext], phase*f/freq2)
-    output.append(wave1 + (f - freq1)/(freq2-freq1) * (wave2-wave1))
+    
+    wave1 = interpWave(waves[tableIdx], phase)
+    wave2 = interpWave(waves[tableNext], phase)
+    v     = wave1 + (f - freq1)/(freq2-freq1) * (wave2-wave1)
+    
+    output.append(v)
 
   return numpy.array(output)
 
@@ -263,7 +269,11 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
 def freqRamp(samples, freqStart, freqStop):
   return numpy.exp(numpy.log(freqStart) + samples * numpy.log(freqStop/freqStart) / (samples.size-1))
 
-waveTables = [makeMipMap(saw)]
+#TEST
+#sqTables, sqFreqs = makeMipMap(square)
+#exit(0)
+
+waveTables = [makeMipMap(w) for w in [saw, square, tri]]
 
 import math, wave, array
 duration = 10 # seconds
@@ -274,23 +284,23 @@ sampleRate = 48000
 numSamples = duration * sampleRate
 samples = numpy.arange(numSamples)
 
-tableOsc = waveTableOscillator(samples, waveTables[0], lambda s : freqRamp(s, freqStart, freqStop), sampleRate = sampleRate )
+w = 0 
+for wt in waveTables:
+  tableOsc = waveTableOscillator(samples, wt, lambda s : freqRamp(s, freqStart, freqStop), sampleRate = sampleRate )
 
-volume = 1 # percent
-data = array.array('h') # signed short integer (-32768 to 32767) data
-numChan = 1 # of channels (1: mono, 2: stereo)
-dataSize = 2 # 2 bytes because of using signed short integers => bit depth = 16
-
-
-for i in range(numSamples):
-  sample = 32767 * float(volume)
-  sample *= tableOsc[i]
-  data.append(int(sample))
-
-f = wave.open('Wavetable.wav', 'w')
-f.setparams((numChan, dataSize, sampleRate, numSamples, "NONE", "Uncompressed"))
-f.writeframes(data.tostring())
-f.close()
+  volume = 1 # percent
+  data = array.array('h') # signed short integer (-32768 to 32767) data
+  numChan = 1 # of channels (1: mono, 2: stereo)
+  dataSize = 2 # 2 bytes because of using signed short integers => bit depth = 16
 
 
+  for i in range(numSamples):
+    sample = 32767 * float(volume)
+    sample *= tableOsc[i]
+    data.append(int(sample))
 
+  f = wave.open('c:/temp/Wavetable%d.wav' % w, 'w')
+  f.setparams((numChan, dataSize, sampleRate, numSamples, "NONE", "Uncompressed"))
+  f.writeframes(data.tostring())
+  f.close()
+  w += 1
