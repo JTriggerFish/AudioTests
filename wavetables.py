@@ -44,7 +44,7 @@ def comb(n):
 
 def tri(n, f=1):
     x = 0
-    for i in xrange(n):
+    for i in xrange(int((n-0.01)/2)+1):
         x += sine((2 * i + 1) * f) / (2 * i + 1) ** 2.0
     return x
 
@@ -63,23 +63,26 @@ def tri_stack(n):
     return x
 
 
-def saw(n, f=1):
+def saw(nh, f=1):
     x = 0
-    for i in xrange(n):
+    for i in xrange(nh):
+        if f*(i+1) > nh:
+            break
         x += sine((i + 1) * f) / (i + 1)
     return x
 
 
-def saw_stack(n):
+def saw_stack(nh, nstack=7):
     x = 0
-    for i in xrange(n):
-        x += saw(1 + 6 * i, i + 1) / ((i + 1) ** 0.5)
+    for i in xrange(nstack):
+        nsubh = min(1+6*i, nh)
+        x += saw(nsubh, i + 1) / ((i + 1) ** 0.5)
     return x
 
 
 def square(n):
     x = 0
-    for i in xrange(n):
+    for i in xrange(int((n-0.01)/2)+1):
         x += sine(2 * i + 1) / (2 * i + 1)
     return x
 
@@ -128,7 +131,7 @@ def trisaw(harmonic):
     return tri(80) + saw(80, harmonic) * (1 if harmonic != 1 else 0) * 0.5
 
 
-def square_formant(ratio):
+def square_formant(nh, ratio=5.0):
     t = numpy.arange(0, WAVETABLE_SIZE) / float(WAVETABLE_SIZE - 1)
     phase = t * (ratio ** 0.5) * 0.5
     phase[phase >= 1.0] = 1.0
@@ -200,12 +203,12 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
     if targetSampleRate is None:
         targetSampleRate = 44800
     #In Hz
-    lowestFreq  = 20
+    lowestFreq  = 20.
     #highestFreq = 7040
 
     numOctaves       = 10
     freqSplits       = [lowestFreq * 2** (i/float(splitsPerOctave)) for i in xrange(0, splitsPerOctave*numOctaves)]
-    numHarmonics     = [int(targetSampleRate / 2 / f) for f in freqSplits]
+    numHarmonics     = [int(targetSampleRate / 2. / f) for f in freqSplits]
     tables           = map(waveFn, numHarmonics)
 
     #renormalise
@@ -213,12 +216,9 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
 
     """
     plt.figure()
-    plt.plot(tables[-6])
-    plt.plot(tables[-5])
-    plt.plot(tables[-4])
-    #plt.plot(tables[-3])
-    #plt.plot(tables[-2])
-    #plt.plot(tables[-1])
+    #plt.plot(tables[19])
+    plt.plot(tables[20])
+    #plt.plot(tables[21])
     plt.show()
     """
 
@@ -310,10 +310,11 @@ def freqSweep(wavetables):
     outputFiles(names, soundStreams, sampleRate)
 
 def freqHarmonics(wavetables):
-    durationPerNote = 0.2 # seconds
-    freqStart = 50
+    durationPerNote = 2. # seconds
+    freqStart = 50.
     sampleRate = 48000
-    harmonics = [1,2,3,4,5,10,15,20,30,50,100]
+    harmonics = [1,2,3,4,5,6,7,8,9,10,15,20,30,50,100]
+    #harmonics = [50]
     numSamples = int(durationPerNote*len(harmonics)*sampleRate)
     samples = numpy.arange(numSamples)
 
@@ -334,10 +335,14 @@ def freqHarmonics(wavetables):
             for s in samples:
                 if i > freqFn.sampleRate * freqFn.durationPerNote:
                     idx += 1
+                    i = 0
                 idx = min(idx, len(freqFn.harmonics)-1)
                 i += 1
                 freq.append(freqFn.freqStart*freqFn.harmonics[idx])
             return freq
+
+        def f2(samples):
+            return numpy.array([100.0]*samples.size)
 
         return f
 
@@ -350,9 +355,11 @@ def freqHarmonics(wavetables):
 #sqTables, sqFreqs = makeMipMap(square)
 #exit(0)
 
-wavetables = [saw, square, tri]
+#wavetables = [saw, square, tri, comb, saw_stack]
+wavetables = [square_formant]
 
-freqHarmonics(wavetables)
+#freqHarmonics(wavetables)
+freqSweep(wavetables)
 
 
 
