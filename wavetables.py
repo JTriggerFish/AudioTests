@@ -205,15 +205,45 @@ def sine(frequency):
     x = numpy.sin(2 * numpy.pi * t * frequency)
     return x
 
+class Formant():
+    """Very basic formant applied to partials with linear amplitude within the width,
+    centered at centerFreq"""
+    def __init__(self, centerFreq, width , dbAmplitude):
+        self.centerFreq  = centerFreq
+        self.width       = width
+        self.a           = math.pow(10., dbAmplitude/20.)
 
-def comb(n):
+    def __call__(self, freq, amplitude):
+        if freq > self.centerFreq + self.width/2. or freq < self.centerFreq - self.width / 2.:
+            return amplitude
+        b = self.a * amplitude
+        return b + (amplitude-b) * abs(self.centerFreq-freq) / self.width / 2.
+
+class OscFromPartials():
+    def __init__(self, partials, amplitudes):
+        self.partials   = partials
+        self.amplitudes = amplitudes
+        self.formants   = []
+
+    def __call__(self, baseFreq, numHarmonics):
+        x = 0
+        for (p, ampl) in zip(self.partials, self.amplitudes):
+            if p > numHarmonics:
+                break
+            a = ampl
+            for f in self.formants:
+                a = f(p * baseFreq, a)
+            x += a * sine(p)
+        return x
+
+def comb(_, n):
     x = 0
     for i in xrange(n):
         x += sine(i + 1)
     return x
 
 
-def tri(n, f=1):
+def tri(_, n, f=1):
     x = 0
     for i in xrange(int((n-0.01)/2)+1):
         x += sine((2 * i + 1) * f) / (2 * i + 1) ** 2.0
@@ -234,7 +264,7 @@ def tri_stack(n):
     return x
 
 
-def saw(nh, f=1):
+def saw(_, nh, f=1):
     x = 0
     for i in xrange(nh):
         if f*(i+1) > nh:
@@ -243,7 +273,7 @@ def saw(nh, f=1):
     return x
 
 
-def saw_stack(nh, nstack=7):
+def saw_stack(_, nh, nstack=7):
     x = 0
     for i in xrange(nstack):
         nsubh = min(1+6*i, nh)
@@ -251,7 +281,7 @@ def saw_stack(nh, nstack=7):
     return x
 
 
-def square(n):
+def square(_, n):
     x = 0
     for i in xrange(int((n-0.01)/2)+1):
         x += sine(2 * i + 1) / (2 * i + 1)
@@ -380,7 +410,7 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
     numOctaves       = 10
     freqSplits       = [lowestFreq * 2** (i/float(splitsPerOctave)) for i in xrange(0, splitsPerOctave*numOctaves)]
     numHarmonics     = [int(targetSampleRate / 2. / f) for f in freqSplits]
-    tables           = map(waveFn, numHarmonics)
+    tables           = map(waveFn, freqSplits, numHarmonics)
 
     #renormalise
     tables = [t / max(abs(t)) for t in tables]
@@ -507,7 +537,7 @@ def freqSweep(wavetables):
 
 def freqHarmonics(wavetables):
     durationPerNote = 2. # seconds
-    freqStart = 440.
+    freqStart = 110.
     sampleRate = 48000
     #harmonics = [1,2,3,4,5,6,7,8,9,10,15,20,30,50,100]
     harmonics = [1]
@@ -552,7 +582,7 @@ def findPartials(soundArray, sampleRate, show = False):
 
     absVals  = abs(2*fft/fft.size)
     dbVals   = 20*numpy.log10(absVals)
-    peaks    = detect_peaks(dbVals, show=show)
+    peaks    = detect_peaks(dbVals, show=True)
     peaks    = [p for p in peaks if dbVals[p] > -60.] #60db threshold for now
 
     #print peaks
@@ -562,16 +592,27 @@ def findPartials(soundArray, sampleRate, show = False):
     
     print partials, amplitudes
 
+def sawFromPartials():
+    partials = numpy.array(xrange(1,10000))
+    amplitudes = 1. /partials
+    return OscFromPartials(partials, amplitudes)
+
+saw_E = sawFromPartials()
+saw_E.formants = [Formant(390., 50., 24.), Formant(2300., 200., 24.)]
+saw_E.__name__ = "saw_E"
+
 def main():
 
     #wavetables = [saw, square, tri, comb, saw_stack]
-    wavetables = [square]
+    wavetables = [saw_E]
 
-    freqHarmonics(wavetables)
-    #freqSweep(wavetables)
+    #freqHarmonics(wavetables)
+    freqSweep(wavetables)
 
-    test = WavFile(r'freqHarmonics_square.wav')
-    findPartials(test.left, test.sampleRate)
+    #test = WavFile(r'freqHarmonics_square.wav')
+    #findPartials(test.left, test.sampleRate)
+
+main()
 
 
 
