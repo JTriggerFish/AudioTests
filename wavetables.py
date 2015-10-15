@@ -537,7 +537,7 @@ def freqSweep(wavetables):
 
 def freqHarmonics(wavetables):
     durationPerNote = 2. # seconds
-    freqStart = 110.
+    freqStart = 83.
     sampleRate = 48000
     #harmonics = [1,2,3,4,5,6,7,8,9,10,15,20,30,50,100]
     harmonics = [1]
@@ -597,17 +597,50 @@ def sawFromPartials():
     amplitudes = 1. /partials
     return OscFromPartials(partials, amplitudes)
 
+"""
 saw_E = sawFromPartials()
 saw_E.formants = [Formant(390., 50., 24.), Formant(2300., 200., 24.)]
 saw_E.__name__ = "saw_E"
+"""
+
+def lowPassSignal(x, cutoff):
+    """Steep FIR low pass at cutoff, using window method"""
+    """Cutoff is between 0 and 1.0, 1.0 being Nyquist"""
+    import scipy.signal as signal
+    order = 80
+    b = signal.firwin(order, cutoff = cutoff, window = "hamming")
+    a = 1
+    y = signal.lfilter(b,a,x)
+    return y
+
+def plotWav(fileName):
+    wav = WavFile(fileName)
+
+    #wav.left = lowPassSignal(wav.left, 0.5)    
+    
+    #File
+    plt.figure(1)
+    plt.subplot(211)
+    plt.plot(wav.left)
+
+    #FFT
+    plt.subplot(212)
+    fft  = numpy.fft.rfft(numpy.blackman(wav.left.size)*wav.left)
+    absVals  = abs(2*fft/fft.size)
+    dbVals   = 20*numpy.log10(absVals)
+    plt.plot(dbVals)
+    
+    plt.show()
+    
 
 def main():
 
     #wavetables = [saw, square, tri, comb, saw_stack]
-    wavetables = [saw_E]
+    wavetables = [square]
 
-    #freqHarmonics(wavetables)
-    freqSweep(wavetables)
+    freqHarmonics(wavetables)
+    #freqSweep(wavetables)
+    plotWav(r'freqHarmonics_square.wav')
 
     #test = WavFile(r'freqHarmonics_square.wav')
     #findPartials(test.left, test.sampleRate)
