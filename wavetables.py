@@ -22,15 +22,17 @@ THE SOFTWARE.
 import numpy
 import matplotlib.pyplot as plt
 import math, wave, array
+import multirate
 
 WAVETABLE_SIZE = 2047
+
 
 def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
                  kpsh=False, valley=False, show=False, ax=None):
     import numpy as np
-    #__author__ = "Marcos Duarte, https://github.com/demotu/BMC"
-    #__version__ = "1.0.4"
-    #__license__ = "MIT"
+    # __author__ = "Marcos Duarte, https://github.com/demotu/BMC"
+    # __version__ = "1.0.4"
+    # __license__ = "MIT"
 
     """Detect peaks in data based on their amplitude and other features.
 
@@ -130,18 +132,18 @@ def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
     # handle NaN's
     if ind.size and indnan.size:
         # NaN's and values close to NaN's cannot be peaks
-        ind = ind[np.in1d(ind, np.unique(np.hstack((indnan, indnan-1, indnan+1))), invert=True)]
+        ind = ind[np.in1d(ind, np.unique(np.hstack((indnan, indnan - 1, indnan + 1))), invert=True)]
     # first and last values of x cannot be peaks
     if ind.size and ind[0] == 0:
         ind = ind[1:]
-    if ind.size and ind[-1] == x.size-1:
+    if ind.size and ind[-1] == x.size - 1:
         ind = ind[:-1]
     # remove peaks < minimum peak height
     if ind.size and mph is not None:
         ind = ind[x[ind] >= mph]
     # remove peaks - neighbors < threshold
     if ind.size and threshold > 0:
-        dx = np.min(np.vstack([x[ind]-x[ind-1], x[ind]-x[ind+1]]), axis=0)
+        dx = np.min(np.vstack([x[ind] - x[ind - 1], x[ind] - x[ind + 1]]), axis=0)
         ind = np.delete(ind, np.where(dx < threshold)[0])
     # detect small peaks closer than minimum peak distance
     if ind.size and mpd > 1:
@@ -151,7 +153,7 @@ def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
             if not idel[i]:
                 # keep peaks with the same height if kpsh is True
                 idel = idel | (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd) \
-                    & (x[ind[i]] > x[ind] if kpsh else True)
+                              & (x[ind[i]] > x[ind] if kpsh else True)
                 idel[i] = 0  # Keep current peak
         # remove the small peaks and sort back the indices by their occurrence
         ind = np.sort(ind[~idel])
@@ -183,11 +185,11 @@ def _plot(x, mph, mpd, threshold, edge, valley, ax, ind):
             label = label + 's' if ind.size > 1 else label
             ax.plot(ind, x[ind], '+', mfc=None, mec='r', mew=2, ms=8,
                     label='%d %s' % (ind.size, label))
-            ax.legend(loc='best')#, framealpha=.5, numpoints=1)
-        ax.set_xlim(-.02*x.size, x.size*1.02-1)
+            ax.legend(loc='best')  # , framealpha=.5, numpoints=1)
+        ax.set_xlim(-.02 * x.size, x.size * 1.02 - 1)
         ymin, ymax = x[np.isfinite(x)].min(), x[np.isfinite(x)].max()
         yrange = ymax - ymin if ymax > ymin else 1
-        ax.set_ylim(ymin - 0.1*yrange, ymax + 0.1*yrange)
+        ax.set_ylim(ymin - 0.1 * yrange, ymax + 0.1 * yrange)
         ax.set_xlabel('Data #', fontsize=14)
         ax.set_ylabel('Amplitude', fontsize=14)
         mode = 'Valley detection' if valley else 'Peak detection'
@@ -205,25 +207,28 @@ def sine(frequency):
     x = numpy.sin(2 * numpy.pi * t * frequency)
     return x
 
+
 class Formant():
     """Very basic formant applied to partials with linear amplitude within the width,
     centered at centerFreq"""
-    def __init__(self, centerFreq, width , dbAmplitude):
-        self.centerFreq  = centerFreq
-        self.width       = width
-        self.a           = math.pow(10., dbAmplitude/20.)
+
+    def __init__(self, centerFreq, width, dbAmplitude):
+        self.centerFreq = centerFreq
+        self.width = width
+        self.a = math.pow(10., dbAmplitude / 20.)
 
     def __call__(self, freq, amplitude):
-        if freq > self.centerFreq + self.width/2. or freq < self.centerFreq - self.width / 2.:
+        if freq > self.centerFreq + self.width / 2. or freq < self.centerFreq - self.width / 2.:
             return amplitude
         b = self.a * amplitude
-        return b + (amplitude-b) * abs(self.centerFreq-freq) / self.width / 2.
+        return b + (amplitude - b) * abs(self.centerFreq - freq) / self.width / 2.
+
 
 class OscFromPartials():
     def __init__(self, partials, amplitudes):
-        self.partials   = partials
+        self.partials = partials
         self.amplitudes = amplitudes
-        self.formants   = []
+        self.formants = []
 
     def __call__(self, baseFreq, numHarmonics):
         x = 0
@@ -236,6 +241,28 @@ class OscFromPartials():
             x += a * sine(p)
         return x
 
+
+class OscFromTable():
+    def __init__(self, table, sampleRate=None):
+        self.table = multirate.resample(table, WAVETABLE_SIZE, table.size)
+        if sampleRate is None:
+            sampleRate = 44800
+        self.sampleRate = sampleRate
+
+    def __call__(self, basefreq, numharmonics):
+        x = 0
+        cutoff = min(.999, float(numharmonics*2.0)  / self.table.size)
+        #TODO FIXME
+        if False:#cutoff < 0.999:
+            x = lowPassSignal(self.table, cutoff)
+        else:
+            x = numpy.copy(self.table)
+        return x
+
+    def setName(self, name):
+        self.name = name
+
+
 def comb(_, n):
     x = 0
     for i in xrange(n):
@@ -245,7 +272,7 @@ def comb(_, n):
 
 def tri(_, n, f=1):
     x = 0
-    for i in xrange(int((n-0.01)/2)+1):
+    for i in xrange(int((n - 0.01) / 2) + 1):
         x += sine((2 * i + 1) * f) / (2 * i + 1) ** 2.0
     return x
 
@@ -267,7 +294,7 @@ def tri_stack(n):
 def saw(_, nh, f=1):
     x = 0
     for i in xrange(nh):
-        if f*(i+1) > nh:
+        if f * (i + 1) > nh:
             break
         x += sine((i + 1) * f) / (i + 1)
     return x
@@ -276,14 +303,14 @@ def saw(_, nh, f=1):
 def saw_stack(_, nh, nstack=7):
     x = 0
     for i in xrange(nstack):
-        nsubh = min(1+6*i, nh)
+        nsubh = min(1 + 6 * i, nh)
         x += saw(nsubh, i + 1) / ((i + 1) ** 0.5)
     return x
 
 
 def square(_, n):
     x = 0
-    for i in xrange(int((n-0.01)/2)+1):
+    for i in xrange(int((n - 0.01) / 2) + 1):
         x += sine(2 * i + 1) / (2 * i + 1)
     return x
 
@@ -362,7 +389,7 @@ def sine_power(power):
     if power >= 6:
         x = sine(2.0) * 2.0
     x += saw(16)
-    power = 2.0 ** (1.2  * (power - 0.5))
+    power = 2.0 ** (1.2 * (power - 0.5))
     return numpy.sign(x) * (numpy.abs(x) ** power)
 
 
@@ -395,24 +422,26 @@ def digi_formant_f(index):
     f = formant_1 + formant_2 + formant_3
     return f - (f.max() + f.min()) / 2.0
 
-def midiToFreq(midiNote):
-    return 440.0 * pow(2.0, (midiNote - 69)/12)
 
-def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
+def midiToFreq(midiNote):
+    return 440.0 * pow(2.0, (midiNote - 69) / 12)
+
+
+def makeMipMap(waveFn, splitsPerOctave=None, targetSampleRate=None):
     if splitsPerOctave is None:
         splitsPerOctave = 3
     if targetSampleRate is None:
         targetSampleRate = 44800
-    #In Hz
-    lowestFreq  = 20.
-    #highestFreq = 7040
+    # In Hz
+    lowestFreq = 20.
+    # highestFreq = 7040
 
-    numOctaves       = 10
-    freqSplits       = [lowestFreq * 2** (i/float(splitsPerOctave)) for i in xrange(0, splitsPerOctave*numOctaves)]
-    numHarmonics     = [int(targetSampleRate / 2. / f) for f in freqSplits]
-    tables           = map(waveFn, freqSplits, numHarmonics)
+    numOctaves = 10
+    freqSplits = [lowestFreq * 2 ** (i / float(splitsPerOctave)) for i in xrange(0, splitsPerOctave * numOctaves)]
+    numHarmonics = [int(targetSampleRate / 2. / f) for f in freqSplits]
+    tables = map(waveFn, freqSplits, numHarmonics)
 
-    #renormalise
+    # renormalise
     tables = [t / max(abs(t)) for t in tables]
 
     """
@@ -428,13 +457,14 @@ def makeMipMap(waveFn, splitsPerOctave = None, targetSampleRate = None):
 
 def interpWave(table, phase):
     """phase is between 0 and 1"""
-    L  = table.size-1 #The last sample repeats the first one
-    t  = phase*L
-    inext  = int(t) + 1
-    i      = inext -1
-    return table[i] + (table[inext]-table[i]) * (t-i)
+    L = table.size - 1  # The last sample repeats the first one
+    t = phase * L
+    inext = int(t) + 1
+    i = inext - 1
+    return table[i] + (table[inext] - table[i]) * (t - i)
 
-def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
+
+def waveTableOscillator(samples, waveTable, freqFn, sampleRate=None):
     if sampleRate is None:
         sampleRate = 44800
 
@@ -446,19 +476,19 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
     for i in samples:
         f = freq[i]
 
-        tableIdx  = numpy.searchsorted(freqSplits, f) - 1
-        tableIdx  = min(tableIdx,len(freqSplits)-1)
-        tableNext = min(tableIdx+1,len(freqSplits)-1)
+        tableIdx = numpy.searchsorted(freqSplits, f) - 1
+        tableIdx = min(tableIdx, len(freqSplits) - 1)
+        tableNext = min(tableIdx + 1, len(freqSplits) - 1)
 
-        freq1  = freqSplits[tableIdx]
-        freq2  = freqSplits[tableNext]
+        freq1 = freqSplits[tableIdx]
+        freq2 = freqSplits[tableNext]
 
-        phase += f/sampleRate
+        phase += f / sampleRate
         phase %= 1.0
 
         wave1 = interpWave(waves[tableIdx], phase)
         wave2 = interpWave(waves[tableNext], phase)
-        v     = wave1 + (f - freq1)/(freq2-freq1) * (wave2-wave1)
+        v = wave1 + (f - freq1) / (freq2 - freq1) * (wave2 - wave1)
 
         output.append(v)
 
@@ -466,94 +496,107 @@ def waveTableOscillator(samples, waveTable, freqFn, sampleRate = None):
 
 
 def freqRamp(samples, freqStart, freqStop):
-    return numpy.exp(numpy.log(freqStart) + samples * numpy.log(freqStop/freqStart) / (samples.size-1))
+    return numpy.exp(numpy.log(freqStart) + samples * numpy.log(freqStop / freqStart) / (samples.size - 1))
 
-def outputFiles(names, soundStreams, sampleRate = None):
+
+def outputFiles(names, soundStreams, sampleRate=None):
     if sampleRate is None:
         sampleRate = 48000
-    assert(len(names)==len(soundStreams))
+    assert (len(names) == len(soundStreams))
     volume = 1
-    numChan = 1 # of channels (1: mono, 2: stereo)
-    dataSize = 2 # 2 bytes because of using signed short integers => bit depth = 16
+    numChan = 1  # of channels (1: mono, 2: stereo)
+    dataSize = 2  # 2 bytes because of using signed short integers => bit depth = 16
 
     for name, sound in zip(names, soundStreams):
-        data = array.array('h') # signed short integer (-32768 to 32767) data
-        N    = sound.size
+        data = array.array('h')  # signed short integer (-32768 to 32767) data
+        N = sound.size
 
         for i in range(N):
             sample = 32767 * float(volume)
             sample *= sound[i]
             data.append(int(sample))
 
-        f = wave.open(name+'.wav', 'w')
+        f = wave.open(name + '.wav', 'w')
         f.setparams((numChan, dataSize, sampleRate, N, "NONE", "Uncompressed"))
         f.writeframes(data.tostring())
         f.close()
+
 
 class WavFile:
     def __init__(self, fileName):
         import struct
         f = wave.open(fileName, 'r')
-        self.nChannels  = f.getnchannels()
-        self.depth      = f.getsampwidth() #in bytes
-        self.sampleRate = f.getframerate()  
-        self.size       = f.getnframes()
+        self.nChannels = f.getnchannels()
+        self.depth = f.getsampwidth()  # in bytes
+        self.sampleRate = f.getframerate()
+        self.size = f.getnframes()
 
         frames = f.readframes(self.size * self.nChannels)
-        out    = struct.unpack_from("%dh" % self.size * self.nChannels, frames)
-        
+        out = struct.unpack_from("%dh" % self.size * self.nChannels, frames)
+
         if self.nChannels == 2:
-            self.left  = numpy.array(out[0::2], dytpe = 'float32')
-            self.right = numpy.array(out[1::2], dtype = 'float32')
-            self.left  /= 2**(self.depth*8-1)
-            self.right /= 2**(self.depth*8-1)
-                        
-            
+            self.left = numpy.array(out[0::2], dytpe='float32')
+            self.right = numpy.array(out[1::2], dtype='float32')
+            self.left /= 2 ** (self.depth * 8 - 1)
+            self.right /= 2 ** (self.depth * 8 - 1)
+
+
         else:
-            self.left  = numpy.array(out, dtype = 'float32')
-            self.left  /= 2**(self.depth*8-1)
+            self.left = numpy.array(out, dtype='float32')
+            self.left /= 2 ** (self.depth * 8 - 1)
             self.right = self.left
-        
+
         f.close()
 
 
 def freqSweep(wavetables):
-    duration = 10 # seconds
+    duration = 10  # seconds
     freqStart = 20
-    freqStop  = 12000
+    freqStop = 12000
     sampleRate = 48000
     numSamples = duration * sampleRate
     samples = numpy.arange(numSamples)
 
     tables = [makeMipMap(w) for w in wavetables]
 
-    names        = ["freqSweep_" + w.__name__ for w in wavetables]
+    names = ["freqSweep_" + w.__name__ for w in wavetables]
     soundStreams = []
 
     for wt in tables:
-        soundStreams.append(waveTableOscillator(samples, wt, lambda s : freqRamp(s, freqStart, freqStop), sampleRate = sampleRate ))
+        soundStreams.append(
+            waveTableOscillator(samples, wt, lambda s: freqRamp(s, freqStart, freqStop), sampleRate=sampleRate))
 
     outputFiles(names, soundStreams, sampleRate)
 
+
 def freqHarmonics(wavetables):
-    durationPerNote = 2. # seconds
-    freqStart = 83.
+    import inspect
+
+    durationPerNote = 2.  # seconds
+    freqStart = 100.
     sampleRate = 48000
-    #harmonics = [1,2,3,4,5,6,7,8,9,10,15,20,30,50,100]
-    harmonics = [1]
-    numSamples = int(durationPerNote*len(harmonics)*sampleRate)
+    harmonics = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 50, 100]
+    # harmonics = [1]
+    numSamples = int(durationPerNote * len(harmonics) * sampleRate)
     samples = numpy.arange(numSamples)
 
     tables = [makeMipMap(w) for w in wavetables]
 
-    names        = ["freqHarmonics_" + w.__name__ for w in wavetables]
+    names = []
+    for w in wavetables:
+        if inspect.isfunction(w):
+            names.append(w.__name__)
+        else:
+            names.append(w.name)
+    names = ["freqHarmonics_" + n for n in names]
     soundStreams = []
 
     def freqFn():
         freqFn.durationPerNote = durationPerNote
         freqFn.sampleRate = sampleRate
-        freqFn.harmonics  = harmonics
-        freqFn.freqStart  = freqStart
+        freqFn.harmonics = harmonics
+        freqFn.freqStart = freqStart
+
         def f(samples):
             i = 0
             idx = 0
@@ -562,40 +605,43 @@ def freqHarmonics(wavetables):
                 if i > freqFn.sampleRate * freqFn.durationPerNote:
                     idx += 1
                     i = 0
-                idx = min(idx, len(freqFn.harmonics)-1)
+                idx = min(idx, len(freqFn.harmonics) - 1)
                 i += 1
-                freq.append(freqFn.freqStart*freqFn.harmonics[idx])
+                freq.append(freqFn.freqStart * freqFn.harmonics[idx])
             return freq
 
         def f2(samples):
-            return numpy.array([100.0]*samples.size)
+            return numpy.array([100.0] * samples.size)
 
         return f
 
     for wt in tables:
-        soundStreams.append(waveTableOscillator(samples, wt, freqFn(), sampleRate = sampleRate ))
+        soundStreams.append(waveTableOscillator(samples, wt, freqFn(), sampleRate=sampleRate))
 
     outputFiles(names, soundStreams, sampleRate)
 
-def findPartials(soundArray, sampleRate, show = False):
-    fft  = numpy.fft.rfft(numpy.blackman(soundArray.size)*soundArray)
 
-    absVals  = abs(2*fft/fft.size)
-    dbVals   = 20*numpy.log10(absVals)
-    peaks    = detect_peaks(dbVals, show=True)
-    peaks    = [p for p in peaks if dbVals[p] > -60.] #60db threshold for now
+def findPartialsFromPeaks(soundArray, sampleRate, show=False):
+    fft = numpy.fft.rfft(numpy.blackman(soundArray.size) * soundArray)
 
-    #print peaks
-    freqs      = numpy.array(peaks) * float(sampleRate) / soundArray.size
-    partials   = freqs / freqs[0]
+    absVals = abs(2 * fft / fft.size)
+    dbVals = 20 * numpy.log10(absVals)
+    peaks = detect_peaks(dbVals, show=True)
+    peaks = [p for p in peaks if dbVals[p] > -60.]  # 60db threshold for now
+
+    # print peaks
+    freqs = numpy.array(peaks) * float(sampleRate) / soundArray.size
+    partials = freqs / freqs[0]
     amplitudes = numpy.array([absVals[p] / absVals[peaks[0]] for p in peaks])
-    
+
     print partials, amplitudes
 
+
 def sawFromPartials():
-    partials = numpy.array(xrange(1,10000))
-    amplitudes = 1. /partials
+    partials = numpy.array(xrange(1, 10000))
+    amplitudes = 1. / partials
     return OscFromPartials(partials, amplitudes)
+
 
 """
 saw_E = sawFromPartials()
@@ -603,49 +649,74 @@ saw_E.formants = [Formant(390., 50., 24.), Formant(2300., 200., 24.)]
 saw_E.__name__ = "saw_E"
 """
 
+
 def lowPassSignal(x, cutoff):
     """Steep FIR low pass at cutoff, using window method"""
     """Cutoff is between 0 and 1.0, 1.0 being Nyquist"""
     import scipy.signal as signal
     order = 80
-    b = signal.firwin(order, cutoff = cutoff, window = "hamming")
+    b = signal.firwin(order, cutoff=cutoff, window="hamming")
     a = 1
-    y = signal.lfilter(b,a,x)
+    y = signal.lfilter(b, a, x)
     return y
+
+
+def plotSignals(*args):
+    # File
+    plt.figure(1)
+    plt.subplot(211)
+    for x in args:
+        t = numpy.arange(0, x.size) / float(x.size - 1)
+        plt.plot(t, x)
+
+    # FFT
+    plt.subplot(212)
+    for x in args:
+        #fft = numpy.fft.rfft(numpy.blackman(x.size) * x)
+        fft = numpy.fft.rfft(numpy.blackman(x.size) * x)
+        absVals = abs(2 * fft / fft.size)
+        dbVals = 20 * numpy.log10(absVals)
+        f = numpy.arange(0, fft.size) / float(fft.size - 1) * math.pi
+        plt.plot(f, dbVals)
+
+    plt.show()
+
 
 def plotWav(fileName):
     wav = WavFile(fileName)
+    plotSignal(wav.left)
 
-    #wav.left = lowPassSignal(wav.left, 0.5)    
-    
-    #File
-    plt.figure(1)
-    plt.subplot(211)
-    plt.plot(wav.left)
+    # wav.left = lowPassSignal(wav.left, 0.5)
 
-    #FFT
-    plt.subplot(212)
-    fft  = numpy.fft.rfft(numpy.blackman(wav.left.size)*wav.left)
-    absVals  = abs(2*fft/fft.size)
-    dbVals   = 20*numpy.log10(absVals)
-    plt.plot(dbVals)
-    
-    plt.show()
-    
+
+def waveFoldSignal(strength, SR=None, f=None):
+    if SR is None:
+        SR = 44800
+    if f is None:
+        f = 1.0
+    t = numpy.arange(0, SR) / float(SR - 1)
+    x = numpy.sin(2 * numpy.pi * t * f)
+    return numpy.sin(x * 8 * (strength + 0.125))
+
 
 def main():
-
-    #wavetables = [saw, square, tri, comb, saw_stack]
-    wavetables = [square]
+    #plotSignals(lowPassSignal(saw(1,10000,10),0.5))
+    #return
+    foldA = numpy.linspace(0.0, 1.0, 2)
+    folds = [waveFoldSignal(a, SR=2047 * 4) for a in foldA]
+    # wavetables = [saw, square, tri, comb, saw_stack]
+    wavetables = [OscFromTable(w) for w in folds]
+    for (w, a) in zip(wavetables, foldA):
+        w.setName("fold_" + str(a))
 
     freqHarmonics(wavetables)
-    #freqSweep(wavetables)
-    plotWav(r'freqHarmonics_square.wav')
+    # freqSweep(wavetables)
+    # plotWav(r'input_fin.wav')
+    # plotSignals(waveFoldSignal(1), waveFoldSignal(0.5), waveFoldSignal(0))
+    # plotSignals(waveFoldSignal(1))
 
-    #test = WavFile(r'freqHarmonics_square.wav')
-    #findPartials(test.left, test.sampleRate)
+    # test = WavFile(r'input_fin.wav')
+    # findPartialsFromPeaks(test.left, test.sampleRate)
+
 
 main()
-
-
-
