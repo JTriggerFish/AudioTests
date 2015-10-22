@@ -208,27 +208,10 @@ def sine(frequency):
     return x
 
 
-class Formant():
-    """Very basic formant applied to partials with linear amplitude within the width,
-    centered at centerFreq"""
-
-    def __init__(self, centerFreq, width, dbAmplitude):
-        self.centerFreq = centerFreq
-        self.width = width
-        self.a = math.pow(10., dbAmplitude / 20.)
-
-    def __call__(self, freq, amplitude):
-        if freq > self.centerFreq + self.width / 2. or freq < self.centerFreq - self.width / 2.:
-            return amplitude
-        b = self.a * amplitude
-        return b + (amplitude - b) * abs(self.centerFreq - freq) / self.width / 2.
-
-
 class OscFromPartials():
-    def __init__(self, partials, amplitudes):
+    def __init__(self, partials=None, amplitudes=None):
         self.partials = partials
         self.amplitudes = amplitudes
-        self.formants = []
 
     def __call__(self, baseFreq, numHarmonics):
         x = 0
@@ -236,10 +219,38 @@ class OscFromPartials():
             if p > numHarmonics:
                 break
             a = ampl
-            for f in self.formants:
-                a = f(p * baseFreq, a)
             x += a * sine(p)
         return x
+
+    def ReconstructFromSignal(self,x):
+        import scipy.optimize as optimize
+
+        x  = x / max(abs(x))
+        X_ = numpy.fft.rfft(x)
+        n  = x.size
+        t = numpy.arange(0, n) / float(n - 1)
+        t[-1] = t[0]
+        targetAs = abs(X_)
+        N = n/2
+        freqs = numpy.arange(1,N+1)
+
+        initGuess = numpy.zeros(N)
+        initGuess[0] = 1.0
+
+        def distance(partialAs):
+            y = 0
+            for (f,p) in zip(freqs, partialAs**2):
+                y += p * numpy.sin(2 * numpy.pi * t * f)
+            y = y / max(abs(y))
+            return targetAs - abs(numpy.fft.rfft(y))
+
+
+        self.partials   = freqs
+        self.amplitudes, fit = optimize.leastsq(distance, x0 = initGuess)
+        self.amplitudes **=2
+
+        plotSignals(x, self(1.0, N))
+
 
 
 class OscFromTable():
@@ -643,12 +654,6 @@ def sawFromPartials():
     return OscFromPartials(partials, amplitudes)
 
 
-"""
-saw_E = sawFromPartials()
-saw_E.formants = [Formant(390., 50., 24.), Formant(2300., 200., 24.)]
-saw_E.__name__ = "saw_E"
-"""
-
 
 def lowPassSignal(x, cutoff):
     """Steep FIR low pass at cutoff, using window method"""
@@ -699,13 +704,16 @@ def waveFoldSignal(strength, SR=None, f=None):
     return numpy.sin(x * 8 * (strength + 0.125))
 
 
+
 def main():
     #plotSignals(lowPassSignal(saw(1,10000,10),0.5))
     #return
     foldA = numpy.linspace(0.0, 1.0, 2)
-    folds = [waveFoldSignal(a, SR=2047 * 4) for a in foldA]
+    folds = [waveFoldSignal(a, SR=1024) for a in foldA]
     # wavetables = [saw, square, tri, comb, saw_stack]
-    wavetables = [OscFromTable(w) for w in folds]
+    wavetables = [OscFromPartials() for w in folds]
+    for w,fold in zip(wavetables, folds):
+        w.ReconstructFromSignal(fold)
     for (w, a) in zip(wavetables, foldA):
         w.setName("fold_" + str(a))
 
