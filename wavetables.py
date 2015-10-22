@@ -230,19 +230,22 @@ class OscFromPartials():
         n  = x.size
         t = numpy.arange(0, n) / float(n - 1)
         t[-1] = t[0]
-        targetAs = abs(X_)
+        targetAs = abs(2*X_/X_.size)
         N = n/2
-        freqs = numpy.arange(1,N+1)
+        freqs = numpy.arange(0,N)
 
         initGuess = numpy.zeros(N)
         initGuess[0] = 1.0
+
+        initGuess = numpy.sqrt(targetAs)
 
         def distance(partialAs):
             y = 0
             for (f,p) in zip(freqs, partialAs**2):
                 y += p * numpy.sin(2 * numpy.pi * t * f)
             y = y / max(abs(y))
-            return targetAs - abs(numpy.fft.rfft(y))
+            Y_ = numpy.fft.rfft(y)
+            return targetAs - abs(2*Y_/Y_.size)
 
 
         self.partials   = freqs
