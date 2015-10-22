@@ -249,8 +249,9 @@ class OscFromPartials():
 
 
         self.partials   = freqs
-        self.amplitudes, fit = optimize.leastsq(distance, x0 = initGuess)
-        self.amplitudes **=2
+        #self.amplitudes, fit = optimize.leastsq(distance, x0 = initGuess)
+        self.amplitudes = initGuess
+        #self.amplitudes **=2
 
         plotSignals(x, self(1.0, N))
 
