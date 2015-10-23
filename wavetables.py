@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import math, wave, array
 import multirate
 
-WAVETABLE_SIZE = 2047
+WAVETABLE_SIZE = 2048
 
 
 def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
@@ -203,7 +203,7 @@ def sine(frequency):
     t = numpy.arange(0, WAVETABLE_SIZE) / float(WAVETABLE_SIZE - 1)
     if frequency >= WAVETABLE_SIZE / 2:
         return t * 0
-    t[-1] = t[0]
+    t[-1] = t[0] #Avoid numerical noise
     x = numpy.sin(2 * numpy.pi * t * frequency)
     return x
 
@@ -228,15 +228,13 @@ class OscFromPartials():
         x  = x / max(abs(x))
         X_ = numpy.fft.rfft(x)
         n  = x.size
-        t = numpy.arange(0, n) / float(n - 1)
-        t[-1] = t[0]
+        t = numpy.arange(0, n) / float(n)
         targetAs = abs(2*X_/X_.size)
         N = n/2
         freqs = numpy.arange(0,N)
 
-        initGuess = numpy.zeros(N)
-        initGuess[0] = 1.0
-
+        #initGuess = numpy.zeros(N)
+        #initGuess[0] = 1.0
         initGuess = numpy.sqrt(targetAs)
 
         def distance(partialAs):
@@ -249,33 +247,11 @@ class OscFromPartials():
 
 
         self.partials   = freqs
-        #self.amplitudes, fit = optimize.leastsq(distance, x0 = initGuess)
-        self.amplitudes = initGuess
-        #self.amplitudes **=2
+        self.amplitudes, fit = optimize.leastsq(distance, x0 = initGuess)
+        #self.amplitudes = initGuess
+        self.amplitudes **=2
 
         plotSignals(x, self(1.0, N))
-
-
-
-class OscFromTable():
-    def __init__(self, table, sampleRate=None):
-        self.table = multirate.resample(table, WAVETABLE_SIZE, table.size)
-        if sampleRate is None:
-            sampleRate = 44800
-        self.sampleRate = sampleRate
-
-    def __call__(self, basefreq, numharmonics):
-        x = 0
-        cutoff = min(.999, float(numharmonics*2.0)  / self.table.size)
-        #TODO FIXME
-        if False:#cutoff < 0.999:
-            x = lowPassSignal(self.table, cutoff)
-        else:
-            x = numpy.copy(self.table)
-        return x
-
-    def setName(self, name):
-        self.name = name
 
 
 def comb(_, n):
@@ -651,12 +627,10 @@ def findPartialsFromPeaks(soundArray, sampleRate, show=False):
 
     print partials, amplitudes
 
-
 def sawFromPartials():
     partials = numpy.array(xrange(1, 10000))
     amplitudes = 1. / partials
     return OscFromPartials(partials, amplitudes)
-
 
 
 def lowPassSignal(x, cutoff):
@@ -675,7 +649,7 @@ def plotSignals(*args):
     plt.figure(1)
     plt.subplot(211)
     for x in args:
-        t = numpy.arange(0, x.size) / float(x.size - 1)
+        t = numpy.arange(0, x.size) / float(x.size)
         plt.plot(t, x)
 
     # FFT
@@ -685,7 +659,7 @@ def plotSignals(*args):
         fft = numpy.fft.rfft(numpy.blackman(x.size) * x)
         absVals = abs(2 * fft / fft.size)
         dbVals = 20 * numpy.log10(absVals)
-        f = numpy.arange(0, fft.size) / float(fft.size - 1) * math.pi
+        f = numpy.arange(0, fft.size) / float(fft.size) * math.pi
         plt.plot(f, dbVals)
 
     plt.show()
@@ -703,7 +677,7 @@ def waveFoldSignal(strength, SR=None, f=None):
         SR = 44800
     if f is None:
         f = 1.0
-    t = numpy.arange(0, SR) / float(SR - 1)
+    t = numpy.arange(0, SR) / float(SR)
     x = numpy.sin(2 * numpy.pi * t * f)
     return numpy.sin(x * 8 * (strength + 0.125))
 
@@ -713,7 +687,7 @@ def main():
     #plotSignals(lowPassSignal(saw(1,10000,10),0.5))
     #return
     foldA = numpy.linspace(0.0, 1.0, 2)
-    folds = [waveFoldSignal(a, SR=1024) for a in foldA]
+    folds = [waveFoldSignal(a, SR=128) for a in foldA]
     # wavetables = [saw, square, tri, comb, saw_stack]
     wavetables = [OscFromPartials() for w in folds]
     for w,fold in zip(wavetables, folds):
