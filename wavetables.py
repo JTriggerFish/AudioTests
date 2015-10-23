@@ -229,21 +229,23 @@ class OscFromPartials():
         X_ = numpy.fft.rfft(x)
         n  = x.size
         t = numpy.arange(0, n) / float(n)
-        targetAs = abs(2*X_/X_.size)
+        targetAs = abs(2.0*X_/X_.size)
+        targetAs[0] = 0.0 #No DC offset
         N = n/2
         freqs = numpy.arange(0,N)
 
-        #initGuess = numpy.zeros(N)
-        #initGuess[0] = 1.0
-        initGuess = numpy.sqrt(targetAs)
+        initGuess = numpy.zeros(N)
+        initGuess[1] = 1.0
+        initGuess = numpy.sqrt(targetAs/2.0)
 
         def distance(partialAs):
             y = 0
             for (f,p) in zip(freqs, partialAs**2):
-                y += p * numpy.sin(2 * numpy.pi * t * f)
-            y = y / max(abs(y))
+                y += p * numpy.sin(2.0 * numpy.pi * t * f)
             Y_ = numpy.fft.rfft(y)
-            return targetAs - abs(2*Y_/Y_.size)
+            spect = abs(2*Y_/Y_.size)
+            dist = targetAs - spect
+            return dist
 
 
         self.partials   = freqs
@@ -251,7 +253,10 @@ class OscFromPartials():
         #self.amplitudes = initGuess
         self.amplitudes **=2
 
-        plotSignals(x, self(1.0, N))
+        #plotSignals(x, self(1.0, N))
+
+    def setName(self, name):
+        self.name = name
 
 
 def comb(_, n):
@@ -541,6 +546,7 @@ class WavFile:
 
 
 def freqSweep(wavetables):
+    import inspect
     duration = 10  # seconds
     freqStart = 20
     freqStop = 12000
@@ -550,7 +556,13 @@ def freqSweep(wavetables):
 
     tables = [makeMipMap(w) for w in wavetables]
 
-    names = ["freqSweep_" + w.__name__ for w in wavetables]
+    names = []
+    for w in wavetables:
+        if inspect.isfunction(w):
+            names.append(w.__name__)
+        else:
+            names.append(w.name)
+    names = ["freqSweep_" + n for n in names]
     soundStreams = []
 
     for wt in tables:
@@ -686,17 +698,20 @@ def waveFoldSignal(strength, SR=None, f=None):
 def main():
     #plotSignals(lowPassSignal(saw(1,10000,10),0.5))
     #return
-    foldA = numpy.linspace(0.0, 1.0, 2)
-    folds = [waveFoldSignal(a, SR=128) for a in foldA]
+    #foldA = numpy.linspace(0.0, 2.0, 8)
+    #folds = [waveFoldSignal(a, SR=128) for a in foldA]
     # wavetables = [saw, square, tri, comb, saw_stack]
-    wavetables = [OscFromPartials() for w in folds]
-    for w,fold in zip(wavetables, folds):
-        w.ReconstructFromSignal(fold)
-    for (w, a) in zip(wavetables, foldA):
-        w.setName("fold_" + str(a))
+    #wavetables = [OscFromPartials() for w in folds]
+    #for w,fold in zip(wavetables, folds):
+    #    w.ReconstructFromSignal(fold)
+    #for (w, a) in zip(wavetables, foldA):
+    #    w.setName("fold_" + str(a))
+    wavetables = [OscFromPartials()]
+    wavetables[0].ReconstructFromSignal(saw_formant(2.0))
+    wavetables[0].setName("sawFormant")
 
     freqHarmonics(wavetables)
-    # freqSweep(wavetables)
+    #freqSweep(wavetables)
     # plotWav(r'input_fin.wav')
     # plotSignals(waveFoldSignal(1), waveFoldSignal(0.5), waveFoldSignal(0))
     # plotSignals(waveFoldSignal(1))
